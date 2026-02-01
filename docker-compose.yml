@@ -19,6 +19,7 @@ services:
       - ./backend:/app
     environment:
       DATABASE_URL: postgresql+psycopg://supportflow:supportflow@db:5432/supportflow
+      JWT_SECRET: "dev-secret-change-me"
     depends_on:
       - db
 
