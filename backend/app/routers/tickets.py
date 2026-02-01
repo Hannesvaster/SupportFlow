@@ -1,18 +1,22 @@
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Ticket
-from app.schemas import TicketCreate, TicketOut
+from app.schemas import TicketCreate, TicketUpdate, TicketOut
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
 @router.post("", response_model=TicketOut, status_code=201)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_ticket(
+    payload: TicketCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     ticket = Ticket(
         title=payload.title,
         description=payload.description,
@@ -50,3 +54,28 @@ def list_tickets(
         .all()
     )
     return tickets
+
+
+@router.patch("/{ticket_id}", response_model=TicketOut)
+def update_ticket(
+    ticket_id: int,
+    payload: TicketUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if payload.status is not None:
+        ticket.status = payload.status
+
+    if payload.priority is not None:
+        ticket.priority = payload.priority
+
+    db.commit()
+    db.refresh(ticket)
+    return ticket
