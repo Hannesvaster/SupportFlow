@@ -1,81 +1,32 @@
-from typing import Optional, List
-
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from typing import Optional, List
 
 from app.db import get_db
 from app.models import Ticket
-from app.schemas import TicketCreate, TicketUpdate, TicketOut
-from app.auth import get_current_user
+from app.schemas import TicketOut
+from app.security import get_current_user
+from app.models import User
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
-@router.post("", response_model=TicketOut, status_code=201)
-def create_ticket(
-    payload: TicketCreate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    ticket = Ticket(
-        title=payload.title,
-        description=payload.description,
-        priority=payload.priority,
-        status="open",
-        owner_id=user.id,
-    )
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    return ticket
-
-
-@router.get("", response_model=List[TicketOut])
-def list_tickets(
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
-    limit: int = Query(20, ge=1, le=100),
+@router.get("/", response_model=List[TicketOut])
+def get_tickets(
+    status: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=50),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user)
 ):
-    q = db.query(Ticket).filter(Ticket.owner_id == user.id)
+    query = db.query(Ticket).filter(Ticket.owner_id == current_user.id)
 
     if status:
-        q = q.filter(Ticket.status == status)
+        query = query.filter(Ticket.status == status)
 
     if priority:
-        q = q.filter(Ticket.priority == priority)
+        query = query.filter(Ticket.priority == priority)
 
-    tickets = (
-        q.order_by(Ticket.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    tickets = query.offset(offset).limit(limit).all()
     return tickets
-
-
-@router.patch("/{ticket_id}", response_model=TicketOut)
-def update_ticket(
-    ticket_id: int,
-    payload: TicketUpdate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-
-    if ticket.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed")
-
-    if payload.status is not None:
-        ticket.status = payload.status
-
-    if payload.priority is not None:
-        ticket.priority = payload.priority
-
-    db.commit()
-    db.refresh(ticket)
-    return ticket
